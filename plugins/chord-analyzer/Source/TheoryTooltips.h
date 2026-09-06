@@ -254,6 +254,14 @@ public:
                 return "SECOND INVERSION: The 5th is in the bass. Less stable - classically used for cadential 6/4, neighbor, or passing motion.";
             case 3:
                 return "THIRD INVERSION: The 7th is in the bass (for 7th chords). Creates strong voice leading tendency down by step.";
+            case 4:
+                return "FOURTH INVERSION: The 9th is in the bass (for 9th chords and above). Rootless, floating sound over a stepwise bass.";
+            case 5:
+                return "FIFTH INVERSION: The 11th is in the bass (for 11th chords and above). Reads as a suspension over the bass note.";
+            case 6:
+                return "SIXTH INVERSION: The 13th is in the bass (for 13th chords). Very open voicing; the bass often doubles as the relative minor root.";
+            case kInversionSlashBass:
+                return "SLASH BASS: The bass note is not part of the chord. An added colour tone under the chord rather than an inversion of it.";
             default:
                 return "";
         }

@@ -127,7 +127,7 @@ ChordFacts ChordAnalyzer::analyzeFacts(const int* midiNotes, int numNotes) const
     }
 
     facts.quality = chordPatterns[static_cast<size_t>(facts.patternIndex)].quality;
-    facts.inversion = calculateInversion(facts.bassNote, facts.rootNote);
+    facts.inversion = calculateInversion(facts.bassNote, facts.rootNote, facts.patternIndex);
     facts.slashBass = (facts.bassNote != facts.rootNote);
     facts.confidence = calculateConfidence(facts.patternIndex, facts.intervals);
     facts.isValid = true;
@@ -406,6 +406,47 @@ juce::String ChordAnalyzer::getKeyName() const
 }
 
 //==============================================================================
+namespace
+{
+    // Inversion ordinal of one pattern tone: which degree of the stacked-thirds
+    // spelling it is (see kInversionSlashBass in ChordAnalyzer.h). The interval
+    // on its own does not say - 3 semitones is the minor third of an m7 and the
+    // #9 of a 7#9, 9 semitones is the sixth of a 6 chord and the diminished
+    // seventh of a dim7 - so the whole pattern being described is passed in.
+    //
+    // The compound spellings (14, 17, 21) fold to the same ordinal as their
+    // simple forms, so a 9th in the bass numbers the same whether the pattern
+    // states it as 2 (sus2) or as 14 (every extended chord).
+    //
+    // Returns -1 for an interval no pattern is allowed to contain;
+    // buildPatternMasks asserts on it rather than letting it pass silently.
+    int degreeOrdinalOf(int interval, const std::set<int>& patternIntervals)
+    {
+        switch (interval)
+        {
+            case 0:  return 0;                        // root
+            case 1:  return 4;                        // b9
+            case 2:  return 4;                        // 9, stated simple by sus2
+            case 3:  // minor third, unless a major third is also spelled: then #9
+                return patternIntervals.count(4) != 0 ? 4 : 1;
+            case 4:  return 1;                        // major third
+            case 5:  return 5;                        // 11th, stated simple by sus4
+            case 6:  return 2;                        // b5. No pattern spells a #11 here
+            case 7:  return 2;                        // perfect fifth
+            case 8:  return 2;                        // #5. No pattern spells a b13 here
+            case 9:  // diminished seventh of a fully diminished chord, else the 6th
+                return (patternIntervals.count(3) != 0 && patternIntervals.count(6) != 0)
+                           ? 3 : 6;
+            case 10: return 3;                        // minor seventh
+            case 11: return 3;                        // major seventh
+            case 14: return 4;                        // 9th
+            case 17: return 5;                        // 11th
+            case 21: return 6;                        // 13th
+            default: return -1;
+        }
+    }
+}
+
 std::vector<ChordAnalyzer::PatternMask> ChordAnalyzer::buildPatternMasks()
 {
     std::vector<PatternMask> masks;
@@ -413,12 +454,25 @@ std::vector<ChordAnalyzer::PatternMask> ChordAnalyzer::buildPatternMasks()
 
     for (const auto& pattern : chordPatterns)
     {
-        PatternMask m { 0u, 0u, 0 };
+        PatternMask m { 0u, 0u, 0, { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 } };
 
         for (int interval : pattern.intervals)
         {
             m.intervals |= (1u << interval);
-            m.pitches = static_cast<std::uint16_t>(m.pitches | (1u << (interval % 12)));
+
+            const int pitchClass = interval % 12;
+            m.pitches = static_cast<std::uint16_t>(m.pitches | (1u << pitchClass));
+
+            const int degree = degreeOrdinalOf(interval, pattern.intervals);
+
+            // Every tone of every pattern has to number, and no pattern may
+            // spell one pitch class as two different degrees - the ordinal is
+            // looked up by pitch class, so a collision would have no answer.
+            jassert(degree >= 0);
+            jassert(m.degrees[pitchClass] < 0 || m.degrees[pitchClass] == degree);
+
+            if (degree >= 0)
+                m.degrees[pitchClass] = static_cast<std::int8_t>(degree);
         }
 
         m.pitchCount = countPitchClasses(m.pitches);
@@ -681,18 +735,31 @@ juce::String ChordAnalyzer::describeAddedTones(int patternIndex, std::uint32_t i
     return text;
 }
 
-int ChordAnalyzer::calculateInversion(int bassPitch, int root) noexcept
+int ChordAnalyzer::calculateInversion(int bassPitch, int root, int patternIndex) noexcept
 {
     if (bassPitch == root)
         return 0;
 
+    // Nothing matched, so there is no spelling to number the bass against.
+    if (patternIndex < 0 || patternIndex >= static_cast<int>(kPatternMasks.size()))
+        return 0;
+
     const int bassInterval = ((bassPitch - root) + 12) % 12;
+    const int degree = kPatternMasks[static_cast<size_t>(patternIndex)].degrees[bassInterval];
 
-    if (bassInterval == 3 || bassInterval == 4) return 1;  // Third in bass
-    if (bassInterval == 7) return 2;  // Fifth in bass
-    if (bassInterval == 10 || bassInterval == 11) return 3;  // Seventh in bass
+    // A bass the pattern does not spell is an added tension or a foreign bass,
+    // not an inversion: C E G under an F# is Cadd#11/F#, and calling that root
+    // position (which every non-chord-tone bass used to report) told the host
+    // the exact opposite of what is sounding. Issue #273.
+    return degree >= 0 ? degree : kInversionSlashBass;
+}
 
-    return 0;
+std::uint16_t ChordAnalyzer::patternPitchClasses(int patternIndex) noexcept
+{
+    if (patternIndex < 0 || patternIndex >= static_cast<int>(kPatternMasks.size()))
+        return 0;
+
+    return kPatternMasks[static_cast<size_t>(patternIndex)].pitches;
 }
 
 float ChordAnalyzer::calculateConfidence(int patternIndex, std::uint32_t intervals) noexcept

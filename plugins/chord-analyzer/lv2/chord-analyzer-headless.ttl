@@ -185,13 +185,17 @@
         lv2:name "Detected Inversion" ;
         lv2:default 0 ;
         lv2:minimum 0 ;
-        lv2:maximum 4 ;
+        lv2:maximum 8 ;
         lv2:portProperty lv2:integer , lv2:enumeration ;
-        lv2:scalePoint [ rdfs:label "-"    ; rdf:value 0 ] ,
-                       [ rdfs:label "Root" ; rdf:value 1 ] ,
-                       [ rdfs:label "1st"  ; rdf:value 2 ] ,
-                       [ rdfs:label "2nd"  ; rdf:value 3 ] ,
-                       [ rdfs:label "3rd"  ; rdf:value 4 ]
+        lv2:scalePoint [ rdfs:label "-"     ; rdf:value 0 ] ,
+                       [ rdfs:label "Root"  ; rdf:value 1 ] ,
+                       [ rdfs:label "1st"   ; rdf:value 2 ] ,
+                       [ rdfs:label "2nd"   ; rdf:value 3 ] ,
+                       [ rdfs:label "3rd"   ; rdf:value 4 ] ,
+                       [ rdfs:label "4th"   ; rdf:value 5 ] ,
+                       [ rdfs:label "5th"   ; rdf:value 6 ] ,
+                       [ rdfs:label "6th"   ; rdf:value 7 ] ,
+                       [ rdfs:label "Slash" ; rdf:value 8 ]
     ] , [
         a lv2:InputPort , lv2:ControlPort ;
         lv2:index 10 ;
