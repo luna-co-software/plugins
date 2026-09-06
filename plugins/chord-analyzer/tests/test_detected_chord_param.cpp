@@ -9,7 +9,9 @@
       * a chord fed through processBlock reaches the parameter as text on the
         normal 20 Hz publish path, with no editor open;
       * Show Inversions changes that text with no note changing;
-      * the output parameters stay out of the saved state.
+      * the output parameters stay out of the saved state;
+      * "Detected Inversion" carries every ordinal the analyzer can report,
+        including the ones added for issue #273.
 */
 
 #include "../Source/PluginProcessor.h"
@@ -135,6 +137,37 @@ static void testLiveParameterText(juce::RangedAudioParameter& chordParam)
 }
 
 //==============================================================================
+// "Detected Inversion" gained four choices for issue #273: the 4th, 5th and 6th
+// inversions the old interval-class numbering could not express, and a "Slash"
+// for a bass the matched chord shape does not spell. They are appended, so a
+// session saved before this keeps the meaning of indices 0..4.
+static void testInversionChoices(juce::AudioProcessor& processor)
+{
+    std::cout << "\n--- Detected Inversion choices ---\n";
+
+    auto* param = dynamic_cast<juce::AudioParameterChoice*>(
+        findParameter(processor, ChordAnalyzerProcessor::PARAM_DETECTED_INVERSION));
+
+    check("Detected Inversion is a choice parameter", param != nullptr);
+
+    if (param == nullptr)
+        return;
+
+    const juce::StringArray expected{ "-", "Root", "1st", "2nd", "3rd",
+                                      "4th", "5th", "6th", "Slash" };
+
+    std::cout << "       choices: " << param->choices.joinIntoString(" ") << "\n";
+
+    check("Detected Inversion has one choice per ordinal plus the slash bass",
+          param->choices.size() == kInversionSlashBass + 2);
+    check("Detected Inversion choices read as declared", param->choices == expected);
+    check("the choices existing sessions address are unchanged",
+          param->choices[0] == "-" && param->choices[1] == "Root"
+           && param->choices[2] == "1st" && param->choices[3] == "2nd"
+           && param->choices[4] == "3rd");
+}
+
+//==============================================================================
 // The saved state must not carry detection results: they are outputs, and the
 // existing four are added straight to the processor rather than to the APVTS
 // for exactly that reason.
@@ -175,8 +208,10 @@ static void testStateExcludesOutputs(ChordAnalyzerProcessor& processor)
 class PublishDriver : private juce::Timer
 {
 public:
-    PublishDriver(ChordAnalyzerProcessor& p, juce::RangedAudioParameter& chordParam)
-        : processor(p), param(chordParam)
+    PublishDriver(ChordAnalyzerProcessor& p,
+                  juce::RangedAudioParameter& chordParam,
+                  juce::RangedAudioParameter& inversionParam)
+        : processor(p), param(chordParam), inversion(inversionParam)
     {
         startTimer(150);
     }
@@ -250,6 +285,36 @@ private:
 
             case 6:
                 check("no notes publishes \"-\"", param.getCurrentValueAsText() == "-");
+                check("no notes publishes no inversion",
+                      inversion.getCurrentValueAsText() == "-");
+                // The voicing from issue #273: D3 E3 G3 Bb3 C4, a C9 over its 9th.
+                sendNotes({ 50, 52, 55, 58, 60 }, {});
+                break;
+
+            case 7:
+                check("the 9th in the bass publishes as a 4th inversion",
+                      inversion.getCurrentValueAsText() == "4th");
+                std::cout << "       D3 E3 G3 Bb3 C4: \"" << param.getCurrentValueAsText()
+                          << "\", inversion \"" << inversion.getCurrentValueAsText() << "\"\n";
+                check("the same voicing still publishes its label",
+                      param.getCurrentValueAsText() == "C9/D");
+                sendNotes({ 54, 60, 64, 67 }, { 50, 52, 55, 58, 60 });
+                break;
+
+            case 8:
+                check("a bass the chord does not spell publishes as Slash",
+                      inversion.getCurrentValueAsText() == "Slash");
+                std::cout << "       F#2 C4 E4 G4: \"" << param.getCurrentValueAsText()
+                          << "\", inversion \"" << inversion.getCurrentValueAsText() << "\"\n";
+                sendNotes({ 52, 60, 64, 67 }, { 54 });
+                break;
+
+            case 9:
+                check("the third in the bass still publishes as a 1st inversion",
+                      inversion.getCurrentValueAsText() == "1st");
+                std::cout << "       E3 C4 E4 G4: \"" << param.getCurrentValueAsText()
+                          << "\", inversion \"" << inversion.getCurrentValueAsText() << "\"\n";
+                sendNotes({}, { 52, 60, 64, 67 });
                 break;
 
             default:
@@ -261,6 +326,7 @@ private:
 
     ChordAnalyzerProcessor& processor;
     juce::RangedAudioParameter& param;
+    juce::RangedAudioParameter& inversion;
     int step = 0;
 };
 
@@ -302,12 +368,23 @@ int main()
     check("Detected Chord was appended after the existing parameters",
           processor.getParameters().getLast() == chordParam);
 
+    auto* inversionParam = findParameter(processor,
+                                         ChordAnalyzerProcessor::PARAM_DETECTED_INVERSION);
+    check("Detected Inversion parameter exists", inversionParam != nullptr);
+
+    if (inversionParam == nullptr)
+    {
+        std::cout << "\n=== Results: " << passed << " passed, " << (failed + 1) << " failed ===\n";
+        return 1;
+    }
+
     testParameterRoundTrip(*chordParam);
     testLiveParameterText(*chordParam);
+    testInversionChoices(processor);
     testStateExcludesOutputs(processor);
 
     std::cout << "\n--- Publish path ---\n";
-    PublishDriver driver(processor, *chordParam);
+    PublishDriver driver(processor, *chordParam, *inversionParam);
     juce::MessageManager::getInstance()->runDispatchLoop();
 
     processor.releaseResources();

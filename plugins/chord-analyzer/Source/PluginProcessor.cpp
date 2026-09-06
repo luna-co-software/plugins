@@ -62,7 +62,19 @@ ChordAnalyzerProcessor::ChordAnalyzerProcessor()
     const juce::StringArray qualityChoices(
         qualityChoiceLabels, qualityChoiceCount);
 
-    const juce::StringArray inversionChoices{ "-", "Root", "1st", "2nd", "3rd" };
+    // Inversion choices: index 0 = "-" (no chord), 1 = root position, then one
+    // per ordinal of the bass tone in the chord's stacked-thirds spelling (3rd,
+    // 5th, 7th, 9th, 11th, 13th in the bass), and a final "Slash" for a bass the
+    // matched chord shape does not spell at all. Appended to, never reordered:
+    // a saved session addresses a choice by index.
+    static constexpr const char* inversionChoiceLabels[]{
+        "-", "Root", "1st", "2nd", "3rd", "4th", "5th", "6th", "Slash" };
+    constexpr int inversionChoiceCount =
+        static_cast<int>(sizeof(inversionChoiceLabels) / sizeof(inversionChoiceLabels[0]));
+    static_assert(inversionChoiceCount == kInversionSlashBass + 2,
+                  "Detected-inversion choices must cover \"-\", every ordinal and the slash bass");
+    const juce::StringArray inversionChoices(
+        inversionChoiceLabels, inversionChoiceCount);
 
     detectedRootParam = new juce::AudioParameterChoice(
         juce::ParameterID(PARAM_DETECTED_ROOT, 1),
@@ -538,8 +550,10 @@ void ChordAnalyzerProcessor::stageDetectedChord(const ChordInfo& chord)
         ? std::max(0, detectedQualityParam->choices.size() - 1) : 0;
     const int qualityIndex = juce::jlimit(
         0, maxQualityIndex, rawQualityIndex);
+    const int maxInversionIndex = detectedInversionParam != nullptr
+        ? std::max(0, detectedInversionParam->choices.size() - 1) : 0;
     const int inversionIndex = chord.isValid
-                                  ? juce::jlimit(0, 4, chord.inversion + 1) : 0;
+                                  ? juce::jlimit(0, maxInversionIndex, chord.inversion + 1) : 0;
 
     pendingRootIndex.store(rootIndex);
     pendingQualityIndex.store(qualityIndex);

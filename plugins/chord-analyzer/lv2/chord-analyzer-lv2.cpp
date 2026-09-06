@@ -83,8 +83,11 @@ void publishDetectedChord (ChordAnalyzerLV2& self, const ChordFacts& chord)
                                  ? chord.bassNote + 1 : 0;
     const int qualityIndex   = (chord.isValid && chord.quality != ChordQuality::Unknown)
                                  ? static_cast<int> (chord.quality) + 1 : 0;
+    // 0 == "-", 1 == root position, 2..7 the six inversion ordinals, 8 a bass
+    // the matched chord shape does not spell. Mirrors the JUCE variant's
+    // "Detected Inversion" choices and the scale points in the .ttl.
     const int inversionIndex = chord.isValid
-                                 ? std::clamp (chord.inversion + 1, 0, 4) : 0;
+                                 ? std::clamp (chord.inversion + 1, 0, kInversionSlashBass + 1) : 0;
 
     if (self.detectedRoot      != nullptr) *self.detectedRoot      = static_cast<float> (rootIndex);
     if (self.detectedQuality   != nullptr) *self.detectedQuality   = static_cast<float> (qualityIndex);

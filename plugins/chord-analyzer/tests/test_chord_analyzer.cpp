@@ -164,6 +164,238 @@ static void testInversions()
 }
 
 // =====================================================================
+// 4b. Inversions past the seventh, and a bass the chord does not spell
+//
+// Issue #273: the bass used to be numbered off raw interval classes, which
+// knew the 3rd, the 5th and the 7th and called every other bass "root
+// position", so the reporter's C9 voiced over its own 9th read as root
+// position. The bass is now numbered against the matched pattern's spelling,
+// which both extends the numbering to the 9th, 11th and 13th and tells a
+// pattern tone from a bass the pattern does not spell at all.
+// =====================================================================
+static void testExtendedInversions()
+{
+    std::cout << "\n--- Extended Inversions (issue #273) ---\n";
+    ChordAnalyzer a;
+
+    // The reporter's own voicing: D3 E3 G3 Bb3 C4, a C9 over its 9th.
+    auto ninth = analyzeNotes(a, {50, 52, 55, 58, 60});
+    check("C9 with the 9th in the bass is a 4th inversion",
+          ninth.isValid && ninth.quality == ChordQuality::Dominant9
+           && ninth.rootNote == 0 && ninth.bassNote == 2 && ninth.inversion == 4);
+    std::cout << "       D3 E3 G3 Bb3 C4 -> " << ninth.name << ninth.extensions
+              << ", inversion " << ninth.inversion << "\n";
+
+    // 11th in the bass of an 11 chord: F C E G Bb D
+    auto eleventh = analyzeNotes(a, {53, 60, 64, 67, 70, 74});
+    check("C11 with the 11th in the bass is a 5th inversion",
+          eleventh.isValid && eleventh.quality == ChordQuality::Dominant11
+           && eleventh.rootNote == 0 && eleventh.bassNote == 5 && eleventh.inversion == 5);
+
+    // 13th in the bass of a 13 chord: A C E G Bb D F
+    auto thirteenth = analyzeNotes(a, {57, 60, 64, 67, 70, 74, 77});
+    check("C13 with the 13th in the bass is a 6th inversion",
+          thirteenth.isValid && thirteenth.quality == ChordQuality::Dominant13
+           && thirteenth.rootNote == 0 && thirteenth.bassNote == 9
+           && thirteenth.inversion == 6);
+
+    // The same degree stated simply rather than compound: the 13-without-9/11
+    // shape spells its 13th as 21 too, so A C E G Bb numbers the same way.
+    auto simple13 = analyzeNotes(a, {57, 60, 64, 67, 70});
+    check("C13 (no 9/11) with the 13th in the bass is a 6th inversion",
+          simple13.isValid && simple13.quality == ChordQuality::Dominant13
+           && simple13.rootNote == 0 && simple13.inversion == 6);
+
+    // b9 in the bass: Db C E G Bb
+    auto flat9 = analyzeNotes(a, {49, 60, 64, 67, 70});
+    check("C7b9 with the b9 in the bass is a 4th inversion",
+          flat9.isValid && flat9.quality == ChordQuality::Dominant7Flat9
+           && flat9.rootNote == 0 && flat9.bassNote == 1 && flat9.inversion == 4);
+
+    // #9 in the bass: Eb C E G Bb. Three semitones above the root, but this
+    // pattern also spells a major third, so the Eb is the #9 and not the third.
+    auto sharp9 = analyzeNotes(a, {51, 60, 64, 67, 70});
+    check("C7#9 with the #9 in the bass is a 4th inversion",
+          sharp9.isValid && sharp9.quality == ChordQuality::Dominant7Sharp9
+           && sharp9.rootNote == 0 && sharp9.bassNote == 3 && sharp9.inversion == 4);
+
+    // ...and the same three semitones stay a third where the pattern spells a
+    // third: Cm9 over its own Eb. A plain m7 cannot be tested this way: with
+    // the minor third in the bass, Eb G Bb C reads as Eb6 in root position.
+    auto minorThird = analyzeNotes(a, {51, 60, 67, 70, 74});
+    check("Cm9 with the minor 3rd in the bass is still a 1st inversion",
+          minorThird.isValid && minorThird.quality == ChordQuality::Minor9
+           && minorThird.rootNote == 0 && minorThird.bassNote == 3
+           && minorThird.inversion == 1);
+
+    // A triad with its 9th in the bass: D C E G Bb-less, i.e. Cadd9 over the D.
+    // add9 spells the 9th as 14, so the D is the fourth degree of the stack.
+    auto add9 = analyzeNotes(a, {50, 60, 64, 67, 74});
+    check("Cadd9 with the 9th in the bass is a 4th inversion",
+          add9.isValid && add9.quality == ChordQuality::Add9
+           && add9.rootNote == 0 && add9.bassNote == 2 && add9.inversion == 4);
+
+    // An altered fifth is still the fifth degree: C Eb Gb over the Gb.
+    auto dimFifth = analyzeNotes(a, {54, 60, 63, 66});
+    check("Cdim with the b5 in the bass is a 2nd inversion",
+          dimFifth.isValid && dimFifth.quality == ChordQuality::Diminished
+           && dimFifth.rootNote == 0 && dimFifth.bassNote == 6
+           && dimFifth.inversion == 2);
+
+    // A suspended tone numbers as the degree it is: the 4th of a sus chord is
+    // an 11th, and the 2nd of a sus2 is a 9th. The number says which degree is
+    // in the bass, so calling either of them a first inversion would claim a
+    // third that is not sounding.
+    auto sus4 = analyzeNotes(a, {53, 60, 65, 67, 70});
+    check("C7sus4 with the 4th in the bass is a 5th inversion",
+          sus4.isValid && sus4.quality == ChordQuality::Dominant7Sus4
+           && sus4.rootNote == 0 && sus4.bassNote == 5 && sus4.inversion == 5);
+
+    auto sus2 = analyzeNotes(a, {50, 60, 62, 67});
+    check("Csus2 with the 2nd in the bass is a 4th inversion",
+          sus2.isValid && sus2.quality == ChordQuality::Sus2
+           && sus2.rootNote == 0 && sus2.bassNote == 2 && sus2.inversion == 4);
+
+    // A shape that leaves the fifth out still numbers by degree, not by
+    // position in the voicing: the Bb is the seventh, so it is a 3rd inversion.
+    auto shell = analyzeNotes(a, {58, 60, 64});
+    check("C7(no5) with the 7th in the bass is a 3rd inversion",
+          shell.isValid && shell.quality == ChordQuality::Dominant7
+           && shell.rootNote == 0 && shell.bassNote == 10 && shell.inversion == 3);
+
+    // A bass the matched pattern does not spell is no inversion at all. The
+    // display already showed this one as a slash (issue #235); the number now
+    // agrees instead of claiming root position.
+    auto foreign = analyzeNotes(a, {54, 60, 64, 67});
+    check("C major over a foreign F# bass is the slash value",
+          foreign.isValid && foreign.quality == ChordQuality::Major
+           && foreign.rootNote == 0 && foreign.bassNote == 6
+           && foreign.inversion == kInversionSlashBass);
+    check("the foreign bass still displays as a slash",
+          foreign.name == "Cadd#11" && foreign.slashBass && foreign.extensions == "/F#");
+
+    // Root position is still root position, and nothing else reports 0.
+    check("root position is still 0", analyzeNotes(a, {60, 64, 67, 70, 74}).inversion == 0);
+}
+
+// =====================================================================
+// 4c. The inversion contract over every chord the analyzer can name.
+//
+// The ordinal is restated here in the contract's own terms - which degree of
+// the matched pattern the bass is - and checked against every pitch-class set
+// in every rotation. The implementation resolves the compound spellings (14,
+// 17, 21) through the pattern's raw intervals; this oracle resolves them
+// through the folded pitch classes, so the two disagree if either drifts.
+// =====================================================================
+static int expectedInversion(int bassInterval, std::uint16_t patternPitches)
+{
+    auto spells = [patternPitches](int pitchClass)
+    {
+        return (patternPitches & (1u << pitchClass)) != 0;
+    };
+
+    if (! spells(bassInterval))
+        return kInversionSlashBass;    // an added tension or a foreign bass
+
+    switch (bassInterval)
+    {
+        case 0:  return 0;                              // root
+        case 1:  return 4;                              // b9
+        case 2:  return 4;                              // 9
+        case 3:  return spells(4) ? 4 : 1;              // #9 beside a major third, else the third
+        case 4:  return 1;                              // major third
+        case 5:  return 5;                              // 11th
+        case 6:  return 2;                              // b5
+        case 7:  return 2;                              // perfect fifth
+        case 8:  return 2;                              // #5
+        case 9:  return (spells(3) && spells(6)) ? 3 : 6;   // dim 7th, else the 13th
+        case 10: return 3;                              // minor seventh
+        default: return 3;                              // major seventh
+    }
+}
+
+static void testInversionProperty()
+{
+    std::cout << "\n--- Inversion contract over every pitch-class set ---\n";
+    ChordAnalyzer a;
+
+    int checked = 0, mismatches = 0, slashCases = 0;
+    int ordinalCounts[8] = { 0 };
+    juce::String firstMismatch;
+
+    for (int mask = 0; mask < 4096; ++mask)
+    {
+        std::vector<int> pcs;
+        for (int i = 0; i < 12; ++i)
+            if (mask & (1 << i))
+                pcs.push_back(i);
+
+        if (pcs.empty())
+            continue;
+
+        // every rotation, so the bass varies over the whole set
+        for (size_t rot = 0; rot < pcs.size(); ++rot)
+        {
+            std::vector<int> notes;
+            for (size_t i = 0; i < pcs.size(); ++i)
+                notes.push_back((i < rot ? 72 : 60) + pcs[i]);
+            std::sort(notes.begin(), notes.end());
+
+            const ChordFacts facts = a.analyzeFacts(notes.data(), (int) notes.size());
+
+            if (! facts.isValid)
+                continue;
+
+            const int bassInterval = ((facts.bassNote - facts.rootNote) + 12) % 12;
+            const std::uint16_t pitches = ChordAnalyzer::patternPitchClasses(facts.patternIndex);
+            const int expected = expectedInversion(bassInterval, pitches);
+
+            ++checked;
+
+            if (facts.inversion >= 0 && facts.inversion < 8)
+                ++ordinalCounts[facts.inversion];
+
+            if (facts.inversion == kInversionSlashBass)
+                ++slashCases;
+
+            const bool rootIsBass = (bassInterval == 0);
+
+            if (facts.inversion != expected
+                || (facts.inversion == 0) != rootIsBass
+                || facts.inversion < 0 || facts.inversion > kInversionSlashBass)
+            {
+                ++mismatches;
+
+                if (firstMismatch.isEmpty())
+                {
+                    firstMismatch = "mask " + juce::String(mask) + " rot " + juce::String((int) rot)
+                                  + ": pattern " + juce::String(facts.patternIndex)
+                                  + " bass interval " + juce::String(bassInterval)
+                                  + " expected " + juce::String(expected)
+                                  + " got " + juce::String(facts.inversion);
+                }
+            }
+        }
+    }
+
+    std::cout << "       (" << checked << " named voicings checked, "
+              << slashCases << " of them over a bass the pattern does not spell)\n";
+    std::cout << "       ordinals:";
+    for (int i = 0; i <= kInversionSlashBass; ++i)
+        std::cout << " " << i << "=" << ordinalCounts[i];
+    std::cout << "\n";
+
+    if (! firstMismatch.isEmpty())
+        std::cout << "       first mismatch: " << firstMismatch << "\n";
+
+    check("every named voicing numbers its bass by the matched pattern's degrees",
+          mismatches == 0);
+    check("the slash value is reached", slashCases > 0);
+    check("every ordinal past the seventh is reached",
+          ordinalCounts[4] > 0 && ordinalCounts[5] > 0 && ordinalCounts[6] > 0);
+}
+
+// =====================================================================
 // 5. Roman numerals in C major
 // =====================================================================
 static void testRomanNumeralsMajor()
@@ -817,6 +1049,8 @@ int main()
     testSevenths();
     testSusAdd();
     testInversions();
+    testExtendedInversions();
+    testInversionProperty();
     testRomanNumeralsMajor();
     testRomanNumeralsMinor();
     testHarmonicFunctions();

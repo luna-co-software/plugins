@@ -123,7 +123,7 @@ These parameters expose the detection result for host automation, screen-recordi
 - **Detected Root:** Current chord root (12 values).
 - **Detected Quality:** Current chord quality (major, minor, 7, maj7, m7, sus2, sus4, dim, aug, etc.).
 - **Detected Bass:** Bass note for slash chords (like C/E or G/B).
-- **Detected Inversion:** Which inversion is currently being played.
+- **Detected Inversion:** Which inversion is currently being played, named after the degree in the bass: `Root`, `1st` (3rd in the bass), `2nd` (5th), `3rd` (7th), `4th` (9th), `5th` (11th), `6th` (13th). A bass note the chord does not contain, such as the F# under `Cadd#11/F#`, reads `Slash` rather than a numbered inversion.
 
 You cannot set these from the host; they update automatically as the plugin detects chords.
 

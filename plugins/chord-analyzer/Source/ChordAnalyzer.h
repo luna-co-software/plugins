@@ -69,6 +69,23 @@ enum class SuggestionCategory
 };
 
 //==============================================================================
+// Inversion numbering. An inversion is the ordinal of the bass tone in the
+// chord's stacked-thirds spelling, judged against the pattern that matched:
+//
+//   0  root      1  third      2  fifth      3  seventh
+//   4  ninth     5  eleventh   6  thirteenth
+//
+// The interval alone cannot decide it - 3 semitones above the root is the minor
+// third of an m7 and the #9 of a 7#9 - so the numbering always goes through the
+// matched pattern.
+//
+// A bass the matched pattern does not spell (an added tension, or a foreign
+// bass such as the F# under a C triad) is no inversion at all. It gets its own
+// value, sorted after the six real ordinals so the host parameter that renders
+// these can append one choice for it.
+inline constexpr int kInversionSlashBass = 7;
+
+//==============================================================================
 // Numeric analysis result: no strings, no heap, safe to compute on an audio
 // thread. The headless LV2 wrapper publishes only these fields.
 struct ChordFacts
@@ -76,7 +93,7 @@ struct ChordFacts
     int rootNote = -1;              // Root pitch class (0-11, C=0)
     int bassNote = -1;              // Lowest note pitch class
     ChordQuality quality = ChordQuality::Unknown;
-    int inversion = 0;              // 0=root, 1=first, 2=second, 3=seventh
+    int inversion = 0;              // 0..6 by degree, kInversionSlashBass otherwise
     bool slashBass = false;         // Bass is not the root
     bool isValid = false;
     float confidence = 0.0f;
@@ -104,7 +121,7 @@ struct ChordInfo
     int bassNote = -1;              // Lowest note pitch class
     ChordQuality quality = ChordQuality::Unknown;
     juce::String extensions;        // Any additional text
-    int inversion = 0;              // 0=root, 1=first, 2=second, etc.
+    int inversion = 0;              // 0..6 by degree, kInversionSlashBass otherwise
     bool slashBass = false;         // Bass is not the root - display slash notation
     bool isValid = false;
     float confidence = 0.0f;        // 0.0-1.0 confidence score
@@ -206,6 +223,12 @@ public:
     static int encodeLabel(const ChordInfo& chord, bool showInversions) noexcept;
     static juce::String decodeLabel(int code);
 
+    //==========================================================================
+    // Pitch classes the pattern at this index spells, one bit each, or 0 for an
+    // index outside the table. Public so a test can state the inversion
+    // contract in the pattern's own terms rather than restating the table.
+    static std::uint16_t patternPitchClasses(int patternIndex) noexcept;
+
 private:
     int keyRoot = 0;        // C
     bool minorKey = false;
@@ -237,6 +260,12 @@ private:
         std::uint32_t intervals;
         std::uint16_t pitches;
         int           pitchCount;
+
+        // Inversion ordinal of each pitch class in this pattern's spelling (see
+        // kInversionSlashBass above for the numbering), -1 for a pitch class the
+        // pattern does not spell. Resolved once, at static-init time, because
+        // the same interval means different degrees in different patterns.
+        std::int8_t   degrees[12];
     };
 
     static const std::vector<PatternMask> kPatternMasks;
@@ -249,7 +278,7 @@ private:
     static bool patternMatches(int patternIndex, std::uint32_t intervals) noexcept;
     static int countPitchClasses(std::uint16_t mask) noexcept;
     static int matchPattern(std::uint32_t intervals) noexcept;   // -1 if none
-    static int calculateInversion(int bassPitch, int root) noexcept;
+    static int calculateInversion(int bassPitch, int root, int patternIndex) noexcept;
     static float calculateConfidence(int patternIndex, std::uint32_t intervals) noexcept;
 
     //==========================================================================
