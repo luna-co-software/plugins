@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <memory>
+#include <utility>
 
 namespace
 {
@@ -65,6 +66,77 @@ bool supporterTextEntersFooter()
 
     return false;
 }
+
+// The host resize path, which is not the in-editor grip path.
+//
+// JUCE's VST3 wrapper answers a host's IPlugView::checkSizeConstraint from the
+// editor's constrainer (juce_audio_plugin_client_VST3.cpp), then sizes the
+// editor to that answer. A host that keeps its own window at the size the user
+// dragged, which REAPER on Linux does, is left with an editor bigger than the
+// window and the face is clipped. This mirrors that arithmetic so the contract
+// can be asserted without a host: whatever the host asks for, the editor must
+// come back no larger, and the face must stay proportional inside it.
+juce::Rectangle<int> hostAnswer (juce::ComponentBoundsConstrainer& constrainer,
+                                 int requestedWidth, int requestedHeight)
+{
+    const auto minW = (float) constrainer.getMinimumWidth();
+    const auto maxW = (float) constrainer.getMaximumWidth();
+    const auto minH = (float) constrainer.getMinimumHeight();
+    const auto maxH = (float) constrainer.getMaximumHeight();
+
+    auto width  = juce::jlimit (minW, maxW, (float) requestedWidth);
+    auto height = juce::jlimit (minH, maxH, (float) requestedHeight);
+
+    const auto aspectRatio = (float) constrainer.getFixedAspectRatio();
+
+    if (! juce::approximatelyEqual (aspectRatio, 0.0f))
+    {
+        if (width / height > aspectRatio)
+        {
+            width = height * aspectRatio;
+
+            if (width > maxW || width < minW)
+            {
+                width = juce::jlimit (minW, maxW, width);
+                height = width / aspectRatio;
+            }
+        }
+        else
+        {
+            height = width / aspectRatio;
+
+            if (height > maxH || height < minH)
+            {
+                height = juce::jlimit (minH, maxH, height);
+                width = height * aspectRatio;
+            }
+        }
+    }
+
+    return { 0, 0, juce::roundToInt (width), juce::roundToInt (height) };
+}
+
+// Union of every visible descendant, in the editor's coordinate space. The
+// resize grip is excluded: it is meant to sit in the corner of the window, not
+// inside the letterboxed face.
+juce::Rectangle<int> paintedBounds (juce::Component& component, juce::Component& root)
+{
+    juce::Rectangle<int> bounds;
+
+    for (int i = 0; i < component.getNumChildComponents(); ++i)
+    {
+        auto* child = component.getChildComponent (i);
+
+        if (child == nullptr || ! child->isVisible()
+            || dynamic_cast<juce::ResizableCornerComponent*> (child) != nullptr)
+            continue;
+
+        bounds = bounds.getUnion (root.getLocalArea (child, child->getLocalBounds()));
+        bounds = bounds.getUnion (paintedBounds (*child, root));
+    }
+
+    return bounds;
+}
 }
 
 class DuskVerbEditorResizeTest final : public juce::JUCEApplicationBase
@@ -113,6 +185,43 @@ public:
                && resizeHandle->getBounds() == juce::Rectangle<int> (minWidth - 16, minHeight - 16, 16, 16));
 
         check (! supporterTextEntersFooter());
+
+        // Issue #240: the host path. REAPER on Linux keeps its window at the
+        // size the user dragged the frame to, so the editor must never come
+        // back larger than the host asked for. Two geometries reproduced by
+        // hand: 1057x474 lost 58 rows off the bottom, 625x340 was clipped on
+        // both axes because it fell below the editor's comfort floor.
+        const std::pair<int, int> hostSizes[] = { { 1057, 474 }, { 625, 340 }, { 1400, 500 }, { 900, 900 } };
+
+        for (const auto& requested : hostSizes)
+        {
+            auto* constrainer = editor->getConstrainer();
+            check (constrainer != nullptr);
+
+            if (constrainer == nullptr)
+                continue;
+
+            // The host constrainer must not clamp: no minimum it can violate,
+            // no aspect correction that grows either axis past the window.
+            check (juce::approximatelyEqual (constrainer->getFixedAspectRatio(), 0.0));
+            check (constrainer->getMinimumWidth() <= 1 && constrainer->getMinimumHeight() <= 1);
+
+            editor->setBounds (hostAnswer (*constrainer, requested.first, requested.second));
+
+            check (editor->getWidth() == requested.first && editor->getHeight() == requested.second);
+
+            // The face is letterboxed inside those bounds, never clipped by them.
+            const auto face = paintedBounds (*editor, *editor);
+            check (face.getRight() <= editor->getWidth());
+            check (face.getBottom() <= editor->getHeight());
+
+            // The layout is fluid: widget sizes come from the shared scale factor
+            // while the panels span the editor, so the face fills the window
+            // rather than sitting in a letterbox. What matters for #240 is that
+            // it lands inside the bounds the host gave, which the two checks
+            // above assert, and that those bounds are the host's own size.
+        }
+
 
         // DuskVerb persists its editor size on destruction. Restore the value
         // loaded at startup so this test never changes the user's preference.
