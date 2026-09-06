@@ -263,7 +263,7 @@ jobs:
           .github/scripts/apt_install.sh \
             gcc-11 g++-11 cmake build-essential pkg-config \
             libasound2-dev libjack-jackd2-dev ladspa-sdk \
-            libcurl4-openssl-dev libfreetype6-dev libx11-dev \
+            libcurl4-openssl-dev libfreetype6-dev libx11-dev xvfb \
             libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
             libxrandr-dev libxrender-dev libwebkit2gtk-4.0-dev \
             libglu1-mesa-dev mesa-common-dev
@@ -344,8 +344,12 @@ jobs:
         shell: bash
         run: |
           cmake --build build --config ${{ env.BUILD_TYPE }} \
-            --target DuskVerbStereoImageTest DuskVerbNyquistClampTest -j"$(nproc)"
-          ctest --test-dir build -R '^DuskVerb' --output-on-failure --no-tests=error
+            --target DuskVerbStereoImageTest DuskVerbNyquistClampTest DuskVerbEditorResizeTest -j"$(nproc)"
+          # DuskVerbEditorResizeTest is a JUCE application that constructs the
+          # real editor, so it needs an X display; the runner has none, hence
+          # xvfb-run. The DSP tests do not care either way.
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            ctest --test-dir build -R '^DuskVerb' --output-on-failure --no-tests=error
 
       - name: Validate plugins
         shell: bash
