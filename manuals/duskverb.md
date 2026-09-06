@@ -1,7 +1,7 @@
 ---
 slug: duskverb
-version: 0.7.1
-last_updated: 2026-08-31
+version: 0.7.2
+last_updated: 2026-09-06
 tagline: Algorithmic reverb with eleven engines (pre-release)
 ---
 
