@@ -15,7 +15,7 @@ public:
         // objects are still alive so the editor cannot retain a dangling
         // pointer during base-class teardown.
         resizer.reset();
-        if (parentEditor != nullptr && parentEditor->getConstrainer() == &constrainer)
+        if (parentEditor != nullptr && parentEditor->getConstrainer() == &hostConstrainer)
         {
             parentEditor->setResizable(false, false);
             parentEditor->setConstrainer(nullptr);
@@ -51,6 +51,7 @@ public:
         constrainer.setMinimumSize(minWidth, minHeight);
         constrainer.setMaximumSize(maxWidth, maxHeight);
         constrainer.setFixedAspectRatio(fixedAspectRatio ? baseWidth / baseHeight : 0.0);
+        configureHostConstrainer(maxWidth, maxHeight);
 
         loadStoredSize();
 
@@ -58,12 +59,11 @@ public:
         editor->addAndMakeVisible(resizer.get());
         resizer->setAlwaysOnTop(true);
 
-        // The host and the in-editor corner must share this constrainer.
-        // setResizeLimits() configures AudioProcessorEditor's separate default
-        // constrainer, which allowed host-window edge drags to bypass the
-        // fixed aspect ratio used by the corner component.
+        // The corner component keeps `constrainer`, with the comfort floor and
+        // the fixed aspect ratio. The host gets `hostConstrainer`, which cannot
+        // fight it: see configureHostConstrainer().
         editor->setResizable(true, false);
-        editor->setConstrainer(&constrainer);
+        editor->setConstrainer(&hostConstrainer);
     }
 
     // Overload without processor — no size persistence, fixed aspect ratio.
@@ -89,13 +89,14 @@ public:
         constrainer.setMinimumSize(minWidth, minHeight);
         constrainer.setMaximumSize(maxWidth, maxHeight);
         constrainer.setFixedAspectRatio(baseWidth / baseHeight);
+        configureHostConstrainer(maxWidth, maxHeight);
 
         resizer = std::make_unique<juce::ResizableCornerComponent>(editor, &constrainer);
         editor->addAndMakeVisible(resizer.get());
         resizer->setAlwaysOnTop(true);
 
         editor->setResizable(true, false);
-        editor->setConstrainer(&constrainer);
+        editor->setConstrainer(&hostConstrainer);
     }
 
     int getStoredWidth() const { return storedWidth; }
@@ -130,12 +131,44 @@ public:
         return value * scaleFactor;
     }
 
+    // The corner component's constrainer, carrying the comfort floor and the
+    // fixed aspect ratio. This is not the constrainer the host sees.
     juce::ComponentBoundsConstrainer& getConstrainer() { return constrainer; }
 
 private:
+    // A host must always get back the size it asked for.
+    //
+    // JUCE answers a VST3 host's IPlugView::checkSizeConstraint from whatever
+    // constrainer the editor carries: it clamps the request up to the minimum
+    // size, then corrects it to the fixed aspect ratio, and sizes the editor to
+    // that answer. A host that honours the answer resizes its window to match
+    // and everything stays proportional, which is what the earlier fix for
+    // issue #240 assumed when it gave the host the corner component's
+    // constrainer. REAPER on Linux does not: it keeps its window at the size the
+    // user dragged the frame to, so an answer larger than that window leaves the
+    // editor overhanging it and the face is clipped. A comfort floor cannot help
+    // either, because the host can always drag below it.
+    //
+    // So the host gets a constrainer that can never enlarge anything: a minimum
+    // it cannot violate and no aspect correction. The maximum is kept, since
+    // clamping downwards only ever leaves a smaller editor inside a larger
+    // window, never an overhang. Fitting the face into those bounds is then the
+    // layout's job, which every editor here already does: it scales its widgets
+    // from updateResizer()'s factor and spans the panels across the editor, so
+    // the face fills whatever window it is given instead of overhanging it.
+    static constexpr int kHostMinimumSize = 1;
+
+    void configureHostConstrainer(int maxWidth, int maxHeight)
+    {
+        hostConstrainer.setMinimumSize(kHostMinimumSize, kHostMinimumSize);
+        hostConstrainer.setMaximumSize(maxWidth, maxHeight);
+        hostConstrainer.setFixedAspectRatio(0.0);
+    }
+
     juce::AudioProcessorEditor* parentEditor = nullptr;
     juce::AudioProcessor* audioProcessor = nullptr;
     juce::ComponentBoundsConstrainer constrainer;
+    juce::ComponentBoundsConstrainer hostConstrainer;
     std::unique_ptr<juce::ResizableCornerComponent> resizer;
     float baseWidth = 800.0f;
     float baseHeight = 600.0f;
